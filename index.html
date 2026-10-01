@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>LEFT 4 MIAMI 2 // RETRO BLOODLINE</title>
+  <!-- Three.js CDN r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Estilos CSS Modularizados -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- THREE.JS CANVAS -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- SCREEN OVERLAYS -->
+  <div class="crt-overlay"></div>
+  <div id="bile-overlay"></div>
+  <div id="damage-overlay"></div>
+  <div id="adrenaline-overlay"></div>
+  <div id="crosshair"><div class="circle"></div></div>
+  <div id="radar-container"></div>
+
+  <!-- IN-GAME HUD -->
+  <div id="hud">
+    <div class="hud-top">
+      <div class="survivor-card">
+        <div class="survivor-name">
+          <span id="ui-survivor-name">COACH</span>
+          <span class="passive-badge" id="ui-passive-badge">+25 HP & TANK SLAYER</span>
+        </div>
+        <div class="hp-container">
+          <div class="temp-hp-bar" id="ui-temp-hp-bar"></div>
+          <div class="hp-bar" id="ui-hp-bar"></div>
+          <div class="hp-text"><span id="ui-hp-val">125</span> / <span id="ui-max-hp-val">125</span></div>
+        </div>
+      </div>
+
+      <div class="director-banner">
+        <div class="director-event" id="ui-director-banner">HORDE INCOMING!</div>
+        <div class="stage-title" id="ui-stage-title">STAGE 1: LIBERTY MALL</div>
+      </div>
+
+      <div class="score-card">
+        <div class="score-val" id="ui-score">000000</div>
+        <div class="combo-box">
+          <div class="combo-multiplier" id="ui-combo-mult">COMBO x1</div>
+          <div class="combo-bar-bg">
+            <div class="combo-bar-fill" id="ui-combo-fill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-bottom">
+      <div class="item-slots">
+        <div class="item-slot" id="slot-throwable">
+          <div class="slot-key">[G] ARREMESSO</div>
+          <div class="slot-name" id="ui-throwable-name">PIPE BOMB</div>
+          <div class="slot-count" id="ui-throwable-count">x1</div>
+        </div>
+        <div class="item-slot" id="slot-med">
+          <div class="slot-key">[V] MÉDICO</div>
+          <div class="slot-name" id="ui-med-name">MEDKIT</div>
+          <div class="slot-count" id="ui-med-count">x1</div>
+        </div>
+      </div>
+
+      <div class="weapon-card">
+        <div class="weapon-name" id="ui-weapon-name">SPAS-12</div>
+        <div class="weapon-ammo"><span id="ui-mag-ammo">10</span> / <span id="ui-reserve-ammo">80</span></div>
+        <div class="weapon-ammo-type" id="ui-ammo-type">PADRÃO</div>
+        <div class="reload-bar">
+          <div class="reload-bar-fill" id="ui-reload-fill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TITLE MENU MODAL -->
+  <div class="modal-overlay visible" id="modal-title">
+    <div class="modal-box">
+      <div class="title-glitch">LEFT 4 MIAMI 2</div>
+      <div class="subtitle">RETRO BLOODLINE // SYNTHWAVE OUTBREAK</div>
+      <p style="color: #bbb; margin-bottom: 25px; line-height: 1.6; font-size: 14px;">
+        Sobreviva à infecção com a brutalidade frenética de Hotline Miami.<br>
+        Eliminações velozes geram combos e multiplicadores insanos.<br>
+        O <strong>AI Director</strong> observa seus passos e dita o ritmo da carnificina.
+      </p>
+      <div>
+        <button class="btn btn-pink" onclick="Game.startCampaign()">Campanha (5 Fases)</button>
+        <button class="btn btn-green" onclick="Game.startSurvival()">Sobrevivência Infinita</button>
+        <br>
+        <button class="btn" onclick="Game.openShop()">Armário & Cosméticos</button>
+        <button class="btn" onclick="Game.openControls()">Controles</button>
+      </div>
+      <div style="margin-top: 25px; font-size: 12px; color: #777;">
+        Pontos Acumulados: <span id="title-points" style="color: var(--neon-yellow); font-weight: bold;">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROLS MODAL -->
+  <div class="modal-overlay" id="modal-controls">
+    <div class="modal-box">
+      <div class="title-glitch" style="font-size: 32px;">CONTROLES</div>
+      <table class="controls-table">
+        <tr><td>WASD</td><td>Mover sobrevivente (animação de passos e inclinação)</td></tr>
+        <tr><td>MOUSE (Mover)</td><td>Mirar em 360° com a visão top-down</td></tr>
+        <tr><td>CLIQUE ESQUERDO</td><td>Atirar / Atacar com arma atual / Soco se desarmado</td></tr>
+        <tr><td>CLIQUE DIREITO / E</td><td>Empurrão corporal (afasta e atordoa zumbis)</td></tr>
+        <tr><td>Q</td><td>Arremessar arma na mão (atinge e atordoa; dano extra se vazia)</td></tr>
+        <tr><td>E</td><td>Pegar/Trocar arma e itens do chão</td></tr>
+        <tr><td>R</td><td>Recarregar arma (ou REINICIAR FASE instantaneamente ao morrer)</td></tr>
+        <tr><td>G ou 1</td><td>Lançar Explosivo (Molotov, Pipe Bomb, Bile Jar)</td></tr>
+        <tr><td>V ou 2</td><td>Usar Item Médico (Kit, Pílulas, Adrenalina, Desfibrilador)</td></tr>
+        <tr><td>ESC / P</td><td>Pausar o jogo</td></tr>
+      </table>
+      <button class="btn btn-pink" onclick="Game.closeModal('modal-controls')">Voltar</button>
+    </div>
+  </div>
+
+  <!-- SHOP & LOCKER MODAL -->
+  <div class="modal-overlay" id="modal-shop">
+    <div class="modal-box" style="max-width: 850px;">
+      <div class="title-glitch" style="font-size: 32px;">ARMÁRIO & SHOP</div>
+      <div style="color: var(--neon-yellow); font-weight: bold; margin-bottom: 15px;">
+        SEUS PONTOS: <span id="shop-points-val">0</span>
+      </div>
+
+      <div class="shop-section">
+        <div class="shop-title">Sobreviventes</div>
+        <div class="shop-grid" id="grid-survivors"></div>
+      </div>
+
+      <div class="shop-section">
+        <div class="shop-title">Chapéus & Máscaras (Hotline Miami)</div>
+        <div class="shop-grid" id="grid-hats"></div>
+      </div>
+
+      <div class="shop-section">
+        <div class="shop-title">Skins de Armas</div>
+        <div class="shop-grid" id="grid-skins"></div>
+      </div>
+
+      <div style="margin-top: 25px;">
+        <button class="btn btn-pink" onclick="Game.closeModal('modal-shop')">Confirmar & Sair</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DEATH MODAL -->
+  <div class="modal-overlay" id="modal-death">
+    <div class="modal-box" style="border-color: var(--neon-red); box-shadow: 0 0 45px rgba(255, 42, 42, 0.8);">
+      <div class="title-glitch" style="color: var(--neon-red); text-shadow: 0 0 20px var(--neon-red);">VOCÊ MORREU</div>
+      <div class="subtitle" id="death-cause" style="color: #ff8888;">DEVORADO PELA HORDA</div>
+      <p style="color: #fff; font-size: 18px; margin-bottom: 25px;">
+        APERTE <strong style="color: var(--neon-yellow);">[R]</strong> PARA REINICIAR INSTANTANEAMENTE
+      </p>
+      <div>
+        <button class="btn btn-pink" onclick="Game.restartStage()">Reiniciar [R]</button>
+        <button class="btn" onclick="Game.returnToTitle()">Menu Principal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VICTORY MODAL -->
+  <div class="modal-overlay" id="modal-victory">
+    <div class="modal-box">
+      <div class="title-glitch" style="color: var(--neon-green); text-shadow: 0 0 25px var(--neon-green);">FASE CONCLUÍDA!</div>
+      <div class="grade-badge" id="victory-grade">S+</div>
+      <div style="line-height: 1.8; margin-bottom: 25px; font-size: 15px;">
+        <div>TEMPO DE FUGA: <strong id="vic-time" style="color: var(--neon-cyan);">01:42</strong></div>
+        <div>INFECTADOS EXTERMINADOS: <strong id="vic-kills" style="color: var(--neon-pink);">184</strong></div>
+        <div>COMBO MÁXIMO: <strong id="vic-combo" style="color: var(--neon-yellow);">x18</strong></div>
+        <div>DANO SOFRIDO: <strong id="vic-dmg" style="color: #ff6666;">24 HP</strong></div>
+        <div style="margin-top: 10px; font-size: 18px;">PONTOS GANHOS: <strong id="vic-points" style="color: var(--neon-green);">+15,400</strong></div>
+      </div>
+      <div>
+        <button class="btn btn-green" id="btn-next-stage" onclick="Game.nextStage()">Próxima Fase</button>
+        <button class="btn" onclick="Game.returnToTitle()">Menu Principal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAUSE MODAL -->
+  <div class="modal-overlay" id="modal-pause">
+    <div class="modal-box">
+      <div class="title-glitch">JOGO PAUSADO</div>
+      <div>
+        <button class="btn btn-green" onclick="Game.togglePause()">Continuar [ESC]</button>
+        <button class="btn btn-pink" onclick="Game.restartStage()">Reiniciar Fase [R]</button>
+        <button class="btn" onclick="Game.returnToTitle()">Menu Principal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT GAME ENGINE -->
+  <script src="game.js"></script>
+</body>
+</html>
