@@ -21,6 +21,7 @@
   <div id="adrenaline-overlay"></div>
   <div id="crosshair"><div class="circle"></div></div>
   <div id="radar-container"></div>
+  <div id="interact-prompt"></div>
 
   <!-- IN-GAME HUD -->
   <div id="hud">
@@ -28,7 +29,7 @@
       <div class="survivor-card">
         <div class="survivor-name">
           <span id="ui-survivor-name">COACH</span>
-          <span class="passive-badge" id="ui-passive-badge">+25 HP & TANK SLAYER</span>
+          <span class="passive-badge" id="ui-passive-badge">+25 HP & DANO CORPO A CORPO</span>
         </div>
         <div class="hp-container">
           <div class="temp-hp-bar" id="ui-temp-hp-bar"></div>
@@ -40,6 +41,7 @@
       <div class="director-banner">
         <div class="director-event" id="ui-director-banner">HORDE INCOMING!</div>
         <div class="stage-title" id="ui-stage-title">STAGE 1: LIBERTY MALL</div>
+        <div class="seed-line">SEED: <span id="ui-seed">------</span></div>
       </div>
 
       <div class="score-card">
@@ -54,23 +56,13 @@
     </div>
 
     <div class="hud-bottom">
-      <div class="item-slots">
-        <div class="item-slot" id="slot-throwable">
-          <div class="slot-key">[G] ARREMESSO</div>
-          <div class="slot-name" id="ui-throwable-name">PIPE BOMB</div>
-          <div class="slot-count" id="ui-throwable-count">x1</div>
-        </div>
-        <div class="item-slot" id="slot-med">
-          <div class="slot-key">[V] MÉDICO</div>
-          <div class="slot-name" id="ui-med-name">MEDKIT</div>
-          <div class="slot-count" id="ui-med-count">x1</div>
-        </div>
-      </div>
+      <!-- [1] [2] [3] [4] [5] -->
+      <div id="slot-bar"></div>
 
       <div class="weapon-card">
-        <div class="weapon-name" id="ui-weapon-name">SPAS-12</div>
-        <div class="weapon-ammo"><span id="ui-mag-ammo">10</span> / <span id="ui-reserve-ammo">80</span></div>
-        <div class="weapon-ammo-type" id="ui-ammo-type">PADRÃO</div>
+        <div class="weapon-name" id="ui-weapon-name">PISTOLA P220</div>
+        <div class="weapon-ammo"><span id="ui-mag-ammo">15</span><span id="ui-reserve-ammo"> / 45</span></div>
+        <div class="weapon-ammo-type" id="ui-ammo-type">9MM</div>
         <div class="reload-bar">
           <div class="reload-bar-fill" id="ui-reload-fill"></div>
         </div>
@@ -83,11 +75,18 @@
     <div class="modal-box">
       <div class="title-glitch">LEFT 4 MIAMI 2</div>
       <div class="subtitle">RETRO BLOODLINE // SYNTHWAVE OUTBREAK</div>
-      <p style="color: #bbb; margin-bottom: 25px; line-height: 1.6; font-size: 14px;">
+      <p style="color: #bbb; margin-bottom: 20px; line-height: 1.6; font-size: 14px;">
         Sobreviva à infecção com a brutalidade frenética de Hotline Miami.<br>
         Eliminações velozes geram combos e multiplicadores insanos.<br>
         O <strong>AI Director</strong> observa seus passos e dita o ritmo da carnificina.
       </p>
+
+      <div class="seed-row">
+        <label for="seed-input">SEED DO MAPA</label>
+        <input id="seed-input" type="text" maxlength="16" placeholder="ALEATÓRIA" autocomplete="off" spellcheck="false">
+        <button class="btn btn-small" onclick="Game.rollSeedInput()">Sortear</button>
+      </div>
+
       <div>
         <button class="btn btn-pink" onclick="Game.startCampaign()">Campanha (5 Fases)</button>
         <button class="btn btn-green" onclick="Game.startSurvival()">Sobrevivência Infinita</button>
@@ -106,17 +105,26 @@
     <div class="modal-box">
       <div class="title-glitch" style="font-size: 32px;">CONTROLES</div>
       <table class="controls-table">
-        <tr><td>WASD</td><td>Mover sobrevivente (animação de passos e inclinação)</td></tr>
+        <tr><td>WASD</td><td>Mover sobrevivente</td></tr>
         <tr><td>MOUSE (Mover)</td><td>Mirar em 360° com a visão top-down</td></tr>
-        <tr><td>CLIQUE ESQUERDO</td><td>Atirar / Atacar com arma atual / Soco se desarmado</td></tr>
-        <tr><td>CLIQUE DIREITO / E</td><td>Empurrão corporal (afasta e atordoa zumbis)</td></tr>
-        <tr><td>Q</td><td>Arremessar arma na mão (atinge e atordoa; dano extra se vazia)</td></tr>
-        <tr><td>E</td><td>Pegar/Trocar arma e itens do chão</td></tr>
-        <tr><td>R</td><td>Recarregar arma (ou REINICIAR FASE instantaneamente ao morrer)</td></tr>
-        <tr><td>G ou 1</td><td>Lançar Explosivo (Molotov, Pipe Bomb, Bile Jar)</td></tr>
-        <tr><td>V ou 2</td><td>Usar Item Médico (Kit, Pílulas, Adrenalina, Desfibrilador)</td></tr>
+        <tr><td>CLIQUE ESQUERDO</td><td>Atirar / golpear / arremessar granada / usar kit (conforme o slot)</td></tr>
+        <tr><td>CLIQUE DIREITO</td><td>Empurrão corporal (afasta e atordoa zumbis)</td></tr>
+        <tr><td>1</td><td>Slot 1 · Arma longa (fuzil, escopeta, AK-47...)</td></tr>
+        <tr><td>2</td><td>Slot 2 · Pistola</td></tr>
+        <tr><td>3</td><td>Slot 3 · Machado / Porrete (mata comuns de um golpe)</td></tr>
+        <tr><td>4</td><td>Slot 4 · Granadas (aperte 4 de novo para trocar G / T / F)</td></tr>
+        <tr><td>5</td><td>Slot 5 · Kit médico</td></tr>
+        <tr><td>RODA DO MOUSE</td><td>Alternar entre slots</td></tr>
+        <tr><td>E</td><td>Pegar/trocar arma do chão (a antiga fica no chão) · empurrão se não houver arma perto</td></tr>
+        <tr><td>R</td><td>Recarregar (ou REINICIAR FASE instantaneamente ao morrer)</td></tr>
+        <tr><td>G / T / F</td><td>Arremessar direto: G = atrai + explode · T = fumaça verde 20s · F = fogo</td></tr>
+        <tr><td>V</td><td>Usar kit médico</td></tr>
+        <tr><td>Q</td><td>Arremessar a arma da mão (atordoa; dano extra se vazia)</td></tr>
         <tr><td>ESC / P</td><td>Pausar o jogo</td></tr>
       </table>
+      <p style="color:#999; font-size:12px; line-height:1.6;">
+        Munição, granadas e kits acabam. Volte à <strong style="color: var(--neon-green)">ZONA DE SUPRIMENTOS</strong> no centro do mapa para reabastecer (os itens de lá reaparecem).
+      </p>
       <button class="btn btn-pink" onclick="Game.closeModal('modal-controls')">Voltar</button>
     </div>
   </div>
@@ -156,10 +164,11 @@
       <div class="title-glitch" style="color: var(--neon-red); text-shadow: 0 0 20px var(--neon-red);">VOCÊ MORREU</div>
       <div class="subtitle" id="death-cause" style="color: #ff8888;">DEVORADO PELA HORDA</div>
       <p style="color: #fff; font-size: 18px; margin-bottom: 25px;">
-        APERTE <strong style="color: var(--neon-yellow);">[R]</strong> PARA REINICIAR INSTANTANEAMENTE
+        APERTE <strong style="color: var(--neon-yellow);">[R]</strong> PARA REINICIAR (MESMO MAPA)
       </p>
       <div>
         <button class="btn btn-pink" onclick="Game.restartStage()">Reiniciar [R]</button>
+        <button class="btn btn-green" onclick="Game.newSeedRestart()">Novo Mapa</button>
         <button class="btn" onclick="Game.returnToTitle()">Menu Principal</button>
       </div>
     </div>
@@ -188,9 +197,13 @@
   <div class="modal-overlay" id="modal-pause">
     <div class="modal-box">
       <div class="title-glitch">JOGO PAUSADO</div>
+      <div class="subtitle">SEED: <span id="pause-seed-val" style="color: var(--neon-yellow);">------</span></div>
       <div>
         <button class="btn btn-green" onclick="Game.togglePause()">Continuar [ESC]</button>
         <button class="btn btn-pink" onclick="Game.restartStage()">Reiniciar Fase [R]</button>
+        <br>
+        <button class="btn" onclick="Game.copySeed()">Copiar Seed</button>
+        <button class="btn" onclick="Game.newSeedRestart()">Novo Mapa</button>
         <button class="btn" onclick="Game.returnToTitle()">Menu Principal</button>
       </div>
     </div>

@@ -17,6 +17,11 @@
   padding: 0;
 }
 
+input {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 body, html {
   width: 100%;
   height: 100%;
@@ -110,12 +115,8 @@ body, html {
   background: var(--neon-cyan);
   box-shadow: 0 0 8px var(--neon-cyan);
 }
-#crosshair::before {
-  top: 13px; left: 0; width: 28px; height: 2px;
-}
-#crosshair::after {
-  top: 0; left: 13px; width: 2px; height: 28px;
-}
+#crosshair::before { top: 13px; left: 0; width: 28px; height: 2px; }
+#crosshair::after { top: 0; left: 13px; width: 2px; height: 28px; }
 #crosshair .circle {
   position: absolute;
   top: 6px; left: 6px;
@@ -164,6 +165,7 @@ body, html {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
 }
 .passive-badge {
   font-size: 11px;
@@ -242,6 +244,17 @@ body, html {
   margin-top: 4px;
   text-shadow: 0 0 4px #000;
 }
+.seed-line {
+  font-size: 12px;
+  color: #777;
+  margin-top: 2px;
+  text-shadow: 0 0 4px #000;
+}
+.seed-line span {
+  color: var(--neon-yellow);
+  font-weight: bold;
+  letter-spacing: 2px;
+}
 
 /* COMBO & SCORE PANEL */
 .score-card {
@@ -300,33 +313,55 @@ body, html {
   align-items: flex-end;
 }
 
-/* ITEMS / INVENTORY */
-.item-slots {
+/* BARRA DE SLOTS [1][2][3][4][5] */
+#slot-bar {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
-.item-slot {
+.slot {
+  position: relative;
+  width: 92px;
+  padding: 18px 6px 6px;
   background: rgba(10, 5, 20, 0.85);
-  border: 2px solid #555;
-  padding: 8px 14px;
+  border: 2px solid #4a3a66;
   border-radius: 4px;
   text-align: center;
-  min-width: 100px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  color: #cfc4e8;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
-.slot-key {
-  font-size: 11px;
-  color: #aaa;
-  margin-bottom: 2px;
+.slot.active {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 16px rgba(0, 243, 255, 0.7);
+  transform: translateY(-6px);
 }
-.slot-name {
-  font-size: 13px;
-  font-weight: bold;
-  color: #fff;
+.slot.empty {
+  opacity: 0.4;
 }
-.slot-count {
-  font-size: 11px;
+.slot-num {
+  position: absolute;
+  top: 2px;
+  left: 6px;
+  font-size: 12px;
+  font-weight: 900;
   color: var(--neon-yellow);
+}
+.slot-icon svg {
+  width: 100%;
+  height: 28px;
+  display: block;
+}
+.slot-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  min-height: 14px;
+}
+.slot-sub .cur {
+  color: var(--neon-yellow);
+  text-decoration: underline;
 }
 
 /* WEAPON PANEL */
@@ -371,6 +406,31 @@ body, html {
   height: 100%;
   background: var(--neon-cyan);
   box-shadow: 0 0 8px var(--neon-cyan);
+}
+
+/* PROMPT DE INTERAÇÃO ([E] PEGAR ARMA) */
+#interact-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 150px;
+  transform: translateX(-50%);
+  z-index: 41;
+  padding: 8px 18px;
+  background: rgba(10, 5, 20, 0.9);
+  border: 2px solid var(--neon-cyan);
+  box-shadow: 0 0 14px rgba(0, 243, 255, 0.6);
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: var(--neon-cyan);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  white-space: nowrap;
+}
+#interact-prompt.visible {
+  opacity: 1;
 }
 
 /* FLOATING POPUP TEXT (HOTLINE MIAMI STYLE) */
@@ -504,23 +564,59 @@ body, html {
   color: #000;
   box-shadow: 0 0 25px var(--neon-green);
 }
+.btn-small {
+  font-size: 13px;
+  padding: 8px 14px;
+  margin: 0 0 0 8px;
+}
+
+/* SEED INPUT (menu inicial) */
+.seed-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  font-size: 12px;
+  color: #aaa;
+  letter-spacing: 1px;
+}
+.seed-row input {
+  width: 170px;
+  padding: 8px 10px;
+  background: #1a102a;
+  border: 2px solid #443366;
+  border-radius: 4px;
+  color: var(--neon-yellow);
+  font-family: var(--hud-font);
+  font-size: 15px;
+  font-weight: bold;
+  letter-spacing: 3px;
+  text-align: center;
+  text-transform: uppercase;
+}
+.seed-row input:focus {
+  outline: none;
+  border-color: var(--neon-yellow);
+  box-shadow: 0 0 10px rgba(255, 230, 0, 0.4);
+}
 
 /* CONTROLS TABLE */
 .controls-table {
   width: 100%;
   text-align: left;
   margin: 20px 0;
-  font-size: 14px;
+  font-size: 13px;
   border-collapse: collapse;
 }
 .controls-table td {
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-bottom: 1px solid #332244;
 }
 .controls-table td:first-child {
   color: var(--neon-yellow);
   font-weight: bold;
-  width: 35%;
+  width: 32%;
 }
 
 /* SHOP / LOCKER GRID */
@@ -589,4 +685,9 @@ body, html {
 @keyframes blink {
   0% { opacity: 0.4; }
   100% { opacity: 1; }
+}
+
+@media (max-width: 900px) {
+  .slot { width: 70px; }
+  .passive-badge { display: none; }
 }
