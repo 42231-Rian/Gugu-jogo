@@ -3672,3 +3672,498 @@ window.addEventListener('load', () => {
 
   animate();
 });
+/* ==========================================================================
+   EXTRAS.JS  -  carregue DEPOIS de game.js
+   - Fases longas estilo L4D2: SAFE ROOM inicial -> caminho -> SAFE ROOM final com PORTA
+   - Zumbis adormecidos (acordam por proximidade ou barulho de tiro)
+   - Evento CRESCENDO no checkpoint central
+   - Rolamento (ESPAÇO) com invulnerabilidade
+   - Inventário passa de fase em fase
+   - Novas telas de início e de morte
+   ========================================================================== */
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const SAFE_BAND = 20, GAP = 4;
+  const TAGLINES = ['Saia do abrigo e atravesse o shopping.', 'O hospital não está vazio.', 'Os alarmes vão te denunciar.', 'Não acorde o que dorme na mansão.', 'A ponte é a última saída.'];
+
+  /* ---------- 1. fases maiores ---------- */
+  const SIZES = [[64, 210], [60, 240], [72, 230], [64, 250], [56, 300]];
+  STAGES_DATA.forEach((s, i) => {
+    s.base = { w: SIZES[i][0], h: SIZES[i][1] };
+    s.scale = 1;
+    for (const k in s.gen) s.gen[k] = Math.round(s.gen[k] * 1.3);
+  });
+
+  /* estruturas nunca invadem as faixas dos safe rooms */
+  const _fits = MapGen._fits;
+  MapGen._fits = function (ctx, r, gap) {
+    const b = MapGen.safeBand;
+    if (b && (r.z + r.hd > ctx.map.hh - b || r.z - r.hd < -ctx.map.hh + b)) return false;
+    return _fits.call(this, ctx, r, gap);
+  };
+
+  function blockRect(map, r) {
+    const C = map.cell, R = MapGen.AGENT_R;
+    const i0 = Math.max(0, Math.floor((r.x - r.hw - R + map.hw) / C)), i1 = Math.min(map.cols - 1, Math.floor((r.x + r.hw + R + map.hw) / C));
+    const j0 = Math.max(0, Math.floor((r.z - r.hd - R + map.hh) / C)), j1 = Math.min(map.rows - 1, Math.floor((r.z + r.hd + R + map.hh) / C));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const cx = -map.hw + (i + 0.5) * C, cz = -map.hh + (j + 0.5) * C;
+      if (Math.abs(cx - r.x) < r.hw + R && Math.abs(cz - r.z) < r.hd + R) { map.walk[j * map.cols + i] = 0; map.blocked[j * map.cols + i] = 1; }
+    }
+  }
+
+  function floorSign(G, text, x, z, color) {
+    try {
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 96;
+      const c = cv.getContext('2d');
+      c.font = 'bold 56px monospace'; c.textAlign = 'center'; c.fillStyle = color; c.fillText(text, 256, 66);
+      const m = new THREE.Mesh(SHARED.geos.unitPlane, new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true }));
+      m.rotation.x = -Math.PI / 2; m.scale.set(11, 2, 1); m.position.set(x, 0.06, z);
+      G.scene.add(m);
+    } catch (e) { /* sem canvas */ }
+  }
+
+  function buildRoom(G, zc, dir, color, label) {
+    const plate = new THREE.Mesh(SHARED.geos.unitPlane, SHARED.lambert(color));
+    plate.rotation.x = -Math.PI / 2; plate.scale.set(16, 15, 1); plate.position.set(0, 0.04, zc);
+    G.scene.add(plate);
+    const neon = SHARED.basic(label === 'SAFE ROOM' ? 0x39ff14 : 0x00f3ff);
+    for (const [x, z, w, d] of [[-8, zc, 0.25, 15], [8, zc, 0.25, 15]]) {
+      const m = new THREE.Mesh(SHARED.box(w, 0.1, d), neon); m.position.set(x, 0.08, z); G.scene.add(m);
+    }
+    const L = new THREE.PointLight(label === 'SAFE ROOM' ? 0x39ff14 : 0x00f3ff, 1.4, 26);
+    L.position.set(0, 4, zc); G.scene.add(L);
+    floorSign(G, label, 0, zc + dir * 2, label === 'SAFE ROOM' ? '#39ff14' : '#00f3ff');
+  }
+
+  /* ---------- 2. montagem da campanha ---------- */
+  function setupCampaign(G, idx) {
+    const map = G.map, hh = map.hh, wallMat = SHARED.lambert(G.stageInfo.wallColor);
+    const R = (a, b, c, d) => MapGen._R(a, b, c, d, 'wall');
+    const rects = [
+      R(-10, hh - 18, -8, hh - 0.5), R(8, hh - 18, 10, hh - 0.5), R(-10, hh - 18, -GAP, hh - 16), R(GAP, hh - 18, 10, hh - 16),
+      R(-10, -hh + 0.5, -8, -hh + 18), R(8, -hh + 0.5, 10, -hh + 18), R(-10, -hh + 16, -GAP, -hh + 18), R(GAP, -hh + 16, 10, -hh + 18)
+    ];
+    for (const r of rects) { G.addSolid(r, wallMat); blockRect(map, r); }
+
+    buildRoom(G, hh - 8, -1, 0x0f2a44, 'INÍCIO');
+    buildRoom(G, -hh + 8, 1, 0x10361f, 'SAFE ROOM');
+
+    const beacon = new THREE.Mesh(SHARED.cyl(1.3, 1.3, 40, 12), SHARED.basic(0x39ff14, { add: true, op: 0.16 }));
+    beacon.position.set(0, 20, -hh + 8); G.scene.add(beacon);
+
+    const dm = new THREE.Mesh(SHARED.box(GAP * 2, 4, 2), SHARED.lambert(0x2ecc71));
+    dm.position.set(0, 2, -hh + 17); dm.visible = false; G.scene.add(dm);
+    const door = { type: 'door', solid: false, x: 0, z: -hh + 17, halfW: GAP, halfD: 1, mesh: dm };
+    G.props.push(door);
+    G.exit = { z: -hh + 8, startZ: hh - 7, door, timer: 0, closed: false, victoryT: 0, done: false, hh };
+
+    /* tira itens/zumbis que caíram dentro das paredes dos safe rooms */
+    const bad = (x, z) => Math.abs(x) < 11.5 && Math.abs(z) > hh - 19;
+    const drop = o => { G.scene.remove(o.mesh); disposeHierarchy(o.mesh); };
+    G.droppedWeapons = G.droppedWeapons.filter(d => bad(d.x, d.z) ? (drop(d), false) : true);
+    G.pickups = G.pickups.filter(d => bad(d.x, d.z) ? (drop(d), false) : true);
+    G.zombies = G.zombies.filter(z => (Math.abs(z.x) < 12 && Math.abs(z.z) > hh - 22) ? (drop(z), false) : true);
+    map.spawnCells = map.spawnCells.filter(c => !(Math.abs(c.x) < 13 && Math.abs(c.z) > hh - 22));
+
+    /* suprimentos iniciais */
+    G.spawnPickup('med', 'med', -5, hh - 4, { give: 1 });
+    G.spawnPickup('ammo', '9mm', 5, hh - 4, { give: 30 });
+    G.spawnPickup('ammo', '556', 5, hh - 10, { give: 60 });
+    G.spawnPickup('grenade', 'G', -5, hh - 10, { give: 1 });
+    if (idx === 0) G.spawnGroundWeapon(0, hh - 4, 'm16', null);
+
+    /* zumbis adormecidos espalhados pelo caminho */
+    const rng = new SeededRNG(`${G.seed}|sl${idx}`);
+    const cells = map.spawnCells.filter(c => Math.abs(c.z) < hh - 26 && Math.hypot(c.x, c.z - (hh - 7)) > 40);
+    const specials = ['smoker', 'hunter', 'spitter', 'jockey', 'boomer'];
+    G.sleepers = [];
+    for (let g = 0, n = 16 + idx * 3; g < n && cells.length; g++) {
+      const c = rng.pick(cells), cnt = rng.int(2, 5);
+      for (let k = 0; k < cnt; k++) {
+        const x = c.x + rng.range(-3, 3), z = c.z + rng.range(-3, 3);
+        if (G.checkWallCollision(x, z, 0.7)) continue;
+        G.sleepers.push({ x, z, type: (idx >= 1 && rng.chance(0.07)) ? rng.pick(specials) : 'common' });
+      }
+    }
+  }
+
+  /* ---------- 3. inventário entre fases ---------- */
+  const snap = p => ({
+    slots: JSON.parse(JSON.stringify(p.slots)), ammo: Object.assign({}, p.ammo), grenades: Object.assign({}, p.grenades),
+    grenadeType: p.grenadeType, medkits: p.medkits, defibs: p.defibs, hp: Math.max(p.hp, Math.ceil(p.maxHp * 0.5))
+  });
+  function applyLoadout(G, s) {
+    const p = G.player;
+    p.slots = JSON.parse(JSON.stringify(s.slots));
+    Object.assign(p.ammo, s.ammo); Object.assign(p.grenades, s.grenades);
+    p.grenadeType = s.grenadeType; p.medkits = s.medkits; p.defibs = s.defibs; p.hp = Math.min(p.maxHp, s.hp);
+    p.activeSlot = p.slots[2] ? 2 : (p.slots[1] ? 1 : 3); p.lastWeaponSlot = p.activeSlot;
+    p.updateWeaponMesh();
+  }
+
+  const _load = Game.loadStage;
+  Game.loadStage = function (idx) {
+    const camp = idx >= 0;
+    MapGen.safeBand = camp ? SAFE_BAND : 0;
+    this.exit = null; this.sleepers = []; this.crescendo = null;
+    _load.call(this, idx);
+    if (camp) {
+      setupCampaign(this, idx);
+      const p = this.player, hh = this.map.hh;
+      p.x = 0; p.z = hh - 7; p.mesh.position.set(0, 0, p.z);
+      this.mouseWorldPos.set(0, 0, p.z - 10);
+      this.camera.position.set(0, 23, p.z + 7.5);
+      if (this._loadout) applyLoadout(this, this._loadout);
+      Nav.computeField(this.map, p.x, p.z, this.nav.field);
+      showIntro(idx, this.stageInfo.name);
+    }
+    this.updateHUD();
+  };
+
+  ['startCampaign', 'startSurvival', 'returnToTitle'].forEach(n => {
+    const f = Game[n];
+    Game[n] = function () { this._loadout = null; return f.apply(this, arguments); };
+  });
+  const _tv = Game.triggerVictory;
+  Game.triggerVictory = function () {
+    if (this.player && this.gameMode === 'campaign') this._loadout = snap(this.player);
+    return _tv.call(this);
+  };
+  Game.checkStageClear = function () { /* campanha: a saída é a porta do safe room */ };
+
+  /* ---------- 4. zumbis dormindo / barulho ---------- */
+  const _zu = Zombie.prototype.update;
+  Zombie.prototype.update = function (dt) {
+    if (this.idle && !this.isDead && Game.player) {
+      const d = Math.hypot(Game.player.x - this.x, Game.player.z - this.z);
+      if (d < 18 || this.hp < this.maxHp) this.idle = false;
+      else {
+        this.walkTime += dt * 0.6; this.animWalk(false);
+        this.mesh.position.set(this.x, 0, this.z);
+        this.mesh.rotation.y += Math.sin(this.walkTime) * 0.004;
+        return;
+      }
+    }
+    return _zu.call(this, dt);
+  };
+  function wakeNear(G, r) {
+    const p = G.player; if (!p) return;
+    for (const z of G.zombies) if (z.idle && Math.hypot(z.x - p.x, z.z - p.z) < r) z.idle = false;
+  }
+  const _sb = Game.shootBullet;
+  Game.shootBullet = function () { wakeNear(this, 26); return _sb.apply(this, arguments); };
+
+  /* ---------- 5. rolamento (ESPAÇO) ---------- */
+  const _pu = Player.prototype.update;
+  Player.prototype.update = function (dt) {
+    if (this.dashCd > 0) this.dashCd -= dt;
+    if (this.invuln > 0) this.invuln -= dt;
+    if (this.dash && this.dash.t > 0 && !this.isDead) {
+      this.dash.t -= dt;
+      const s = 22 * dt, nx = this.x + this.dash.x * s, nz = this.z + this.dash.z * s;
+      if (!Game.checkWallCollision(nx, this.z, 0.55)) this.x = nx;
+      if (!Game.checkWallCollision(this.x, nz, 0.55)) this.z = nz;
+      Game.spawnParticle(this.x, 0.9, this.z, 0x00f3ff, 0.35, 0.25, 1, 0.5);
+    }
+    return _pu.call(this, dt);
+  };
+  const _td = Player.prototype.takeDamage;
+  Player.prototype.takeDamage = function (a, s) {
+    if (this.invuln > 0 && !this.isDead) return;
+    return _td.call(this, a, s);
+  };
+  function doDash() {
+    const G = Game, p = G.player;
+    if (!G.isRunning || G.isPaused || !p || p.isDead || p.dashCd > 0) return;
+    let dx = 0, dz = 0; const k = G.keys;
+    if (k['KeyW']) dz -= 1; if (k['KeyS']) dz += 1; if (k['KeyA']) dx -= 1; if (k['KeyD']) dx += 1;
+    if (!dx && !dz) { dx = Math.sin(p.mesh.rotation.y); dz = Math.cos(p.mesh.rotation.y); }
+    const l = Math.hypot(dx, dz);
+    p.dash = { t: 0.2, x: dx / l, z: dz / l };
+    p.dashCd = 1.1; p.invuln = 0.32; p.jockeyTime = 0;
+    audio.playSwoosh();
+  }
+
+  /* ---------- 6. passo extra do jogo: sleepers, porta, crescendo, HUD ---------- */
+  const _step = Game.step;
+  Game.step = function (dt) {
+    const frozen = this.hitStopTimer > 0;
+    _step.call(this, dt);
+    if (!frozen && this.player) extraStep(this, dt);
+  };
+
+  const _v = new THREE.Vector3();
+  function extraStep(G, dt) {
+    const p = G.player;
+    for (let i = G.sleepers.length - 1; i >= 0; i--) {
+      const s = G.sleepers[i];
+      if (Math.hypot(s.x - p.x, s.z - p.z) < 42 && G.zombies.length < 60) {
+        G.sleepers.splice(i, 1);
+        G.zombies.push(new Zombie(s.x, s.z, s.type));
+        G.zombies[G.zombies.length - 1].idle = true;
+      }
+    }
+    const ex = G.exit, hud = $('obj-hud');
+    hud.style.display = ex ? 'block' : 'none';
+    if (!ex) { $('obj-arrow').style.display = 'none'; return; }
+
+    let msg = null;
+    if (Math.abs(p.x) < 7.5 && Math.abs(p.z) < 1e9 && p.z < -ex.hh + 15.5 && !ex.closed) {
+      ex.timer += dt; msg = `FECHANDO A PORTA... ${Math.max(0, 3 - ex.timer).toFixed(1)}s`;
+      if (ex.timer >= 3) {
+        ex.closed = true; ex.door.solid = true; ex.door.mesh.visible = true;
+        blockRect(G.map, MapMeta(ex)); Nav.computeField(G.map, p.x, p.z, G.nav.field);
+        audio.playPanClang(); G.cameraShake = 14; G.showPopup('PORTA TRANCADA! VOCÊ ESTÁ A SALVO', '#39ff14');
+      }
+    } else ex.timer = Math.max(0, ex.timer - dt * 2);
+    if (ex.closed && !ex.done) { msg = 'PORTA TRANCADA'; ex.victoryT += dt; if (ex.victoryT > 1.2) { ex.done = true; G.triggerVictory(); } }
+
+    /* crescendo no checkpoint central */
+    let cr = G.crescendo;
+    if (!cr && Math.abs(p.x) < 12 && Math.abs(p.z) < 12) {
+      cr = G.crescendo = { t: 28, acc: 0 };
+      G.triggerDirectorEvent('CRESCENDO! RESISTA!'); G.showPopup('ALARME ATIVADO! SOBREVIVA 28s', '#ff2a2a');
+    }
+    if (cr && cr.t > 0) {
+      cr.t -= dt; cr.acc += dt; G.director.timer = 0;
+      while (cr.acc > 0.22) { cr.acc -= 0.22; if (G.zombies.length < 70) G.spawnHordeZombie(); }
+      msg = `CRESCENDO · SOBREVIVA ${Math.ceil(cr.t)}s`;
+      if (cr.t <= 0) { G.score += 1500; G.showPopup('SILÊNCIO... SIGA ADIANTE! +1500', '#39ff14'); }
+    }
+
+    const total = ex.startZ - ex.z, prog = Math.min(1, Math.max(0, (ex.startZ - p.z) / total));
+    $('obj-title').innerText = msg || `SIGA PARA O SAFE ROOM · ${Math.round(Math.abs(p.z - ex.z))} m`;
+    $('obj-fill').style.width = (prog * 100) + '%';
+    $('dash-fill').style.width = (100 - Math.max(0, (p.dashCd || 0) / 1.1) * 100) + '%';
+
+    /* seta de objetivo na borda da tela */
+    const arrow = $('obj-arrow'), W = window.innerWidth, H = window.innerHeight;
+    _v.set(0, 1, ex.z).project(G.camera);
+    let sx = (_v.x * 0.5 + 0.5) * W, sy = (-_v.y * 0.5 + 0.5) * H;
+    const off = _v.z > 1 || sx < 50 || sx > W - 50 || sy < 50 || sy > H - 50;
+    if (off && Math.abs(p.z - ex.z) > 25) {
+      let a = Math.atan2(sy - H / 2, sx - W / 2); if (_v.z > 1) a += Math.PI;
+      arrow.style.display = 'flex';
+      arrow.style.left = (W / 2 + Math.cos(a) * (W / 2 - 60)) + 'px';
+      arrow.style.top = (H / 2 + Math.sin(a) * (H / 2 - 60)) + 'px';
+      arrow.style.transform = `translate(-50%,-50%) rotate(${a}rad)`;
+    } else arrow.style.display = 'none';
+  }
+  function MapMeta(ex) { return { x: 0, z: ex.door.z, hw: GAP, hd: 1 }; }
+
+  /* ---------- 7. DOM extra (HUD, intro, entrada) ---------- */
+  document.body.insertAdjacentHTML('beforeend',
+    `<div id="obj-hud"><div id="obj-title"></div><div class="obj-bar"><i id="obj-fill"></i></div>
+     <div class="obj-dash">ROLAR [ESPAÇO]<div class="obj-bar"><i id="dash-fill"></i></div></div></div>
+     <div id="obj-arrow">➤</div>`);
+
+  function showIntro(idx, name) {
+    const old = $('chapter-intro'); if (old) old.remove();
+    const el = document.createElement('div');
+    el.id = 'chapter-intro';
+    el.innerHTML = `<small>CAPÍTULO ${idx + 1}</small><b>${name.replace(/^STAGE \d+:\s*/, '')}</b><em>${TAGLINES[idx] || ''}</em>`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4600);
+  }
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space' && !(e.target && e.target.tagName === 'INPUT')) { e.preventDefault(); doDash(); }
+  });
+
+  const ctl = document.querySelector('.controls-table tbody');
+  if (ctl) ctl.insertAdjacentHTML('beforeend',
+    '<tr><td>ESPAÇO</td><td>Rolar/dash com invulnerabilidade curta (solta Jockey)</td></tr>' +
+    '<tr><td>OBJETIVO</td><td>Cruze o mapa até o SAFE ROOM verde e fique dentro 3s para trancar a porta. Tiros acordam zumbis adormecidos; golpes corpo a corpo são silenciosos.</td></tr>');
+
+  /* ---------- 8. TELA DE INÍCIO ---------- */
+  $('modal-title').innerHTML = `
+  <div class="ts">
+    <div class="ts-sun"></div><div class="ts-city"></div><div class="ts-grid"></div>
+    <div class="ts-vignette"></div>
+    <div class="ts-content">
+      <div class="ts-kicker">▶ SOBREVIVA // ELIMINE // COMBO</div>
+      <h1 class="ts-logo"><span class="l4">LEFT</span><span class="n4">4</span><span class="mi" data-text="MIAMI">MIAMI</span><span class="two">2</span></h1>
+      <div class="ts-sub">RETRO BLOODLINE</div>
+      <ul class="ts-menu" id="ts-menu">
+        <li data-act="campaign">CAMPANHA <small>5 CAPÍTULOS · SAFE ROOMS</small></li>
+        <li data-act="survival">SOBREVIVÊNCIA <small>ONDAS INFINITAS</small></li>
+        <li data-act="shop">ARMÁRIO <small>COSMÉTICOS</small></li>
+        <li data-act="controls">CONTROLES</li>
+      </ul>
+      <div class="ts-seed"><label for="seed-input">SEED</label>
+        <input id="seed-input" type="text" maxlength="16" placeholder="ALEATÓRIA" autocomplete="off" spellcheck="false">
+        <button onclick="Game.rollSeedInput()">SORTEAR</button></div>
+      <div class="ts-crew" id="ts-crew"></div>
+      <div class="ts-foot">PONTOS <span id="title-points">0</span> &nbsp;·&nbsp; ↑ ↓ ENTER</div>
+    </div>
+  </div>`;
+  const city = document.querySelector('.ts-city');
+  for (let i = 0; i < 34; i++) { const b = document.createElement('i'); b.style.height = (25 + Math.random() * 75) + '%'; b.style.flex = (1 + Math.random() * 1.6).toFixed(2); city.appendChild(b); }
+
+  let sel = 0;
+  const items = () => document.querySelectorAll('#ts-menu li');
+  const paint = () => items().forEach((li, i) => li.classList.toggle('sel', i === sel));
+  function runAct(a) {
+    if (a === 'campaign') Game.startCampaign(); else if (a === 'survival') Game.startSurvival();
+    else if (a === 'shop') Game.openShop(); else if (a === 'controls') Game.openControls();
+  }
+  items().forEach((li, i) => { li.onmouseenter = () => { sel = i; paint(); }; li.onclick = () => runAct(li.dataset.act); });
+  function renderCrew() {
+    const box = $('ts-crew'); box.innerHTML = '';
+    Object.keys(SURVIVORS).forEach(k => {
+      const s = SURVIVORS[k], d = document.createElement('div');
+      d.className = 'crew' + (Game.selectedSurvivor === k ? ' on' : '');
+      d.style.setProperty('--c', '#' + s.shirtColor.toString(16).padStart(6, '0'));
+      d.innerHTML = `<b>${s.name}</b><small>${s.passive}</small>`;
+      d.onclick = () => { Game.selectedSurvivor = k; renderCrew(); };
+      box.appendChild(d);
+    });
+  }
+  renderCrew(); paint();
+
+  /* ---------- 9. TELA DE MORTE ---------- */
+  const QUOTES = ['Eles não cansam. Você sim.', 'Mais uma tentativa. Sempre há mais uma.', 'A horda não esquece.', 'O safe room estava logo ali...', 'Dica: role com ESPAÇO antes do impacto.', 'Granadas atraem. Use isso.'];
+  $('modal-death').innerHTML = `
+  <div class="ds">
+    <div class="ds-noise"></div>
+    <div class="ds-content">
+      <div class="ds-pre">// SINAL PERDIDO</div>
+      <h1 class="ds-title" data-text="VOCÊ MORREU">VOCÊ MORREU</h1>
+      <div class="ds-cause" id="death-cause">DEVORADO PELA HORDA</div>
+      <div class="ds-stats">
+        <div><b id="ds-kills">0</b><small>ABATES</small></div><div><b id="ds-score">0</b><small>PONTOS</small></div>
+        <div><b id="ds-time">0s</b><small>SOBREVIVEU</small></div><div><b id="ds-combo">x1</b><small>COMBO MÁX</small></div>
+      </div>
+      <ul class="ds-menu">
+        <li onclick="Game.restartStage()"><kbd>R</kbd> TENTAR DE NOVO</li>
+        <li onclick="Game.newSeedRestart()"><kbd>N</kbd> NOVO MAPA</li>
+        <li onclick="Game.returnToTitle()"><kbd>M</kbd> MENU PRINCIPAL</li>
+      </ul>
+      <div class="ds-quote" id="ds-quote"></div>
+    </div>
+  </div>`;
+
+  const _show = Game.showModal;
+  Game.showModal = function (id) {
+    if (id === 'modal-death') {
+      $('ds-kills').innerText = this.kills; $('ds-score').innerText = this.score.toLocaleString();
+      $('ds-time').innerText = Math.floor(this.stageClock) + 's'; $('ds-combo').innerText = 'x' + this.maxCombo;
+      $('ds-quote').innerText = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+      const o = $('exit-obj'); if (o) o.remove();
+      const hud = $('obj-hud'); if (hud) hud.style.display = 'none';
+      $('obj-arrow').style.display = 'none';
+    }
+    if (id === 'modal-title') { renderCrew(); sel = 0; paint(); }
+    return _show.call(this, id);
+  };
+
+  document.addEventListener('keydown', e => {
+    if (e.target && e.target.tagName === 'INPUT') return;
+    const open = document.querySelectorAll('.modal-overlay.visible');
+    if (open.length !== 1) return;
+    if (open[0].id === 'modal-title') {
+      if (e.code === 'ArrowDown') { sel = (sel + 1) % items().length; paint(); }
+      else if (e.code === 'ArrowUp') { sel = (sel + items().length - 1) % items().length; paint(); }
+      else if (e.code === 'Enter') runAct(items()[sel].dataset.act);
+    } else if (open[0].id === 'modal-death') {
+      if (e.code === 'KeyN') Game.newSeedRestart(); else if (e.code === 'KeyM') Game.returnToTitle();
+    }
+  });
+})();
+/* ==========================================================================
+   AJUSTE: zumbis com movimento irregular + hordas espaçadas
+   (cole no FINAL do game.js)
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  /* ---- 1. Movimento: zigue-zague de longe, tropeços, reto de perto ---- */
+  Zombie.prototype.steer = function (dt, tx, tz, field, mul) {
+    mul = mul || 1;
+    if (this.weavePhase === undefined) {
+      this.weavePhase = Math.random() * 6.28;
+      this.weaveFreq = 1.2 + Math.random() * 1.6;
+      this.weaveAmp = 0.35 + Math.random() * 0.5;
+      this.pauseT = 0;
+      this.pauseCd = 2 + Math.random() * 4;
+    }
+    const dx = tx - this.x, dz = tz - this.z, d = Math.hypot(dx, dz) || 1;
+    let ux = dx / d, uz = dz / d;
+
+    if (d > 3 && field && !Nav.lineClear(Game.map, this.x, this.z, tx, tz)) {
+      if (Nav.dir(Game.map, field, this.x, this.z, _dirTmp)) { ux = _dirTmp.x; uz = _dirTmp.z; }
+    }
+
+    if (d > 3.5 && this.type !== 'tank' && this.type !== 'witch') {
+      this.weavePhase += dt * this.weaveFreq;
+      const w = Math.sin(this.weavePhase) * this.weaveAmp * Math.min(1, (d - 3.5) / 6);
+      const bx = ux, bz = uz;
+      ux = bx - bz * w; uz = bz + bx * w;
+      const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+    }
+
+    if (this.type === 'common') {
+      if (this.pauseT > 0) { this.pauseT -= dt; mul *= 0.15; }
+      else {
+        this.pauseCd -= dt;
+        if (this.pauseCd <= 0) {
+          this.pauseCd = 2.5 + Math.random() * 5;
+          if (Math.random() < 0.35) this.pauseT = 0.3 + Math.random() * 0.5;
+        }
+      }
+    }
+
+    this.moveBy(ux * this.speed * mul * dt, uz * this.speed * mul * dt);
+    this.mesh.rotation.y = Math.atan2(ux, uz);
+    if (this.type === 'common' && this.torsoGroup)
+      this.torsoGroup.rotation.z = Math.sin(this.walkTime * 0.7 + this.weavePhase) * 0.1;
+  };
+
+  /* ---- 2. Horda: quantidade fixa, nasce aos poucos, intervalo de 60 a 110s ---- */
+  Game.triggerDirectorEvent = function (text) {
+    const d = this.director;
+    d.state = "HORDE";
+    d.timer = 0;
+    d.spawnAcc = 0;
+    d.hordeLeft = 16 + Math.floor(Math.random() * 8);
+    d.nextHorde = 60 + Math.random() * 50;
+    audio.isHorde = true;
+    const banner = document.getElementById('ui-director-banner');
+    banner.innerText = text;
+    banner.classList.add('active');
+    audio.playSpecialAlert('horde');
+  };
+
+  Game.updateDirector = function (dt) {
+    const d = this.director;
+    d.timer += dt;
+    d.specialTimer += dt;
+
+    if (d.state === "PEACE") {
+      if (d.timer > (d.nextHorde || 60)) { d.timer = 0; this.triggerDirectorEvent("HORDE APPROACHING!"); }
+    } else if (d.state === "HORDE") {
+      d.spawnAcc = (d.spawnAcc || 0) + dt;
+      if (d.spawnAcc > 0.35 && d.hordeLeft > 0 && this.zombies.length < 45) {
+        d.spawnAcc = 0; d.hordeLeft--;
+        this.spawnHordeZombie();
+      }
+      if (d.timer > 12.0) {
+        d.state = "PEACE"; d.timer = 0;
+        audio.isHorde = false;
+        document.getElementById('ui-director-banner').classList.remove('active');
+      }
+    }
+
+    if (d.specialTimer > 18.0) {
+      d.specialTimer = 0;
+      this.spawnSpecialInfected(['smoker', 'hunter', 'boomer', 'spitter', 'charger', 'jockey'][Math.floor(Math.random() * 6)]);
+    }
+
+    if (!d.tankSpawned && (this.stageClock > 90.0 || this.kills >= 65)) {
+      d.tankSpawned = true;
+      this.spawnSpecialInfected('tank');
+    }
+  };
+})();
